@@ -427,6 +427,7 @@ fn call_str_method_impl(
         StaticStrings::Ljust => str_ljust(s, args, vm),
         StaticStrings::Rjust => str_rjust(s, args, vm),
         StaticStrings::Zfill => str_zfill(s, args, vm),
+        StaticStrings::Expandtabs => str_expandtabs(s, args, vm),
         // Additional methods
         StaticStrings::Encode => str_encode(s, args, vm),
         StaticStrings::Isidentifier => {
@@ -1923,6 +1924,52 @@ fn str_zfill(s: &str, args: ArgValues, vm: &mut VM<'_, '_, impl ResourceTracker>
         }
         result
     };
+
+    allocate_string(result, vm.heap)
+}
+
+/// Implements Python's `str.expandtabs(tabsize=8)` method.
+///
+/// Returns a copy of the string where all tab characters are replaced by one or
+/// more spaces, depending on the current column and the given tab size.
+fn str_expandtabs(s: &str, args: ArgValues, vm: &mut VM<'_, '_, impl ResourceTracker>) -> RunResult<Value> {
+    // Check args
+    let tabsize_val = args.get_zero_one_arg("str.expandtabs", vm.heap)?;
+
+    let tabsize = match tabsize_val {
+        None => 8,
+        Some(val) => {
+            let result_int = extract_int_arg(&val, vm)?;
+            val.drop_with_heap(vm.heap);
+            if result_int < 0 {
+                0
+            } else {
+                usize::try_from(result_int).unwrap_or(usize::MAX)
+            }
+        }
+    };
+
+    let mut result = String::with_capacity(s.len());
+    let mut column = 0;
+
+    for c in s.chars() {
+        if c == '\t' {
+            if tabsize > 0 {
+                let spaces = tabsize - (column % tabsize);
+                for _ in 0..spaces {
+                    result.push(' ');
+                }
+                column += spaces;
+            }
+        } else {
+            result.push(c);
+            if c == '\n' || c == '\r' {
+                column = 0;
+            } else {
+                column += 1;
+            }
+        }
+    }
 
     allocate_string(result, vm.heap)
 }
